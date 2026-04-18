@@ -123,6 +123,33 @@ OCR_QUESTION_PATTERN = re.compile(
 CREATE_PROJECT_PATTERN = re.compile(
     r"^(?:create|make|new|start)\s+(?:a\s+)?(\w+)\s+project$", re.IGNORECASE
 )
+SET_VOICE_PATTERN = re.compile(
+    r"^(?:change|set|switch)(?:\s+my)?\s+voice(?:\s+to)?\s*(.*)$", re.IGNORECASE
+)
+USE_VOICE_PATTERN = re.compile(
+    r"^(?:use|make it|make)\s+(.+?)\s+voice$", re.IGNORECASE
+)
+
+VOICE_PRESET_ALIASES = {
+    "uk female": "uk_female",
+    "british female": "uk_female",
+    "female british": "uk_female",
+    "sonia": "uk_female",
+    "sonia neural": "uk_female",
+    "uk male": "uk_male",
+    "british male": "uk_male",
+    "male british": "uk_male",
+    "ryan": "uk_male",
+    "ryan neural": "uk_male",
+    "us female": "us_female",
+    "american female": "us_female",
+    "aria": "us_female",
+    "aria neural": "us_female",
+    "us male": "us_male",
+    "american male": "us_male",
+    "guy": "us_male",
+    "guy neural": "us_male",
+}
 
 SYSTEM_COMMANDS = {
     "shutdown":             {"action": "system", "command": "shutdown /s /t 0"},
@@ -200,6 +227,9 @@ SYSTEM_COMMANDS = {
     "git push":             {"action": "task", "task": "push_to_github"},
     "push my project":      {"action": "task", "task": "push_to_github"},
     "upload to github":     {"action": "task", "task": "push_to_github"},
+    "list voices":          {"action": "tts_voice_list"},
+    "available voices":     {"action": "tts_voice_list"},
+    "voice options":        {"action": "tts_voice_list"},
 }
 
 FOLDER_PATHS = {
@@ -313,6 +343,24 @@ def normalize_weather_text(text: str) -> str:
     return " ".join(normalized.split())
 
 
+def resolve_voice_preset(raw_voice: str) -> str | None:
+    voice_text = re.sub(r"[^a-z0-9\s]", " ", (raw_voice or "").lower())
+    voice_text = " ".join(voice_text.split())
+
+    for suffix in (" voice", " one"):
+        if voice_text.endswith(suffix):
+            voice_text = voice_text[: -len(suffix)].strip()
+
+    if voice_text in VOICE_PRESET_ALIASES:
+        return VOICE_PRESET_ALIASES[voice_text]
+
+    match = get_close_matches(voice_text, VOICE_PRESET_ALIASES.keys(), n=1, cutoff=0.78)
+    if match:
+        return VOICE_PRESET_ALIASES[match[0]]
+
+    return None
+
+
 def is_weather_request(text: str) -> bool:
     words = re.findall(r"[a-z]+", text.lower())
     for word in words:
@@ -332,6 +380,24 @@ def parse(user_input: str) -> dict | None:
     system_command = resolve_system_command(lower)
     if system_command:
         return system_command
+
+    # Voice selection commands
+    m = SET_VOICE_PATTERN.match(cleaned)
+    if m:
+        raw_voice = m.group(1).strip()
+        if not raw_voice:
+            return {"action": "tts_voice_list"}
+        preset = resolve_voice_preset(raw_voice)
+        if preset:
+            return {"action": "tts_voice", "preset": preset}
+        return {"action": "tts_voice_list"}
+
+    m = USE_VOICE_PATTERN.match(cleaned)
+    if m:
+        preset = resolve_voice_preset(m.group(1).strip())
+        if preset:
+            return {"action": "tts_voice", "preset": preset}
+        return {"action": "tts_voice_list"}
 
     # folder check early — only for commands that actually sound like folder requests
     if FOLDER_INTENT_PATTERN.match(lower) and any(word in lower for word in ["folder", "directory"] + FOLDER_KEYWORDS):

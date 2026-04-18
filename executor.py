@@ -367,6 +367,36 @@ def execute(command: dict):
         speak(result)
         return {"spoken": True, "result": result}
 
+    elif action == "tts_voice":
+        from tts import set_voice, speak
+
+        preset = command.get("preset", "")
+        labels = {
+            "uk_female": "British female",
+            "uk_male": "British male",
+            "us_female": "American female",
+            "us_male": "American male",
+        }
+
+        if set_voice(preset):
+            label = labels.get(preset, preset.replace("_", " "))
+            message = f"Voice changed to {label}."
+        else:
+            message = "I could not find that voice. Say available voices to hear options."
+
+        print(f"[TTS] {message}")
+        speak(message)
+        return {"spoken": True, "result": message}
+
+    elif action == "tts_voice_list":
+        from tts import available_voices, speak
+
+        voices = ", ".join(sorted(available_voices().keys()))
+        message = f"Available voices are: {voices}."
+        print(f"[TTS] {message}")
+        speak(message)
+        return {"spoken": True, "result": message}
+
     elif action == "task":
         task = command.get("task")
         if task == "create_project":

@@ -64,6 +64,12 @@ A sophisticated Windows-based AI voice assistant that enables complete PC contro
 - Automatic context-aware responses
 - Stop with: "stop", "bye", "goodbye", "end", "that's all", "enough"
 
+### **Hands-Free Voice Switching** 🎙️
+- Switch TTS voices by voice command while Friday is running
+- Built-in presets: `uk_female`, `uk_male`, `us_female`, `us_male`
+- Natural aliases supported: "british female", "sonia", "american male", etc.
+- Voice confirms the selected preset immediately
+
 ### **Command Chaining** ⛓️
 Combine multiple commands in one sentence:
 - "open chrome **and** search youtube for lofi"
@@ -238,6 +244,17 @@ what is AI?          → Chat response
 how does encryption work?→ Explanation
 tell me about Python→ Information query
 explain machine learning→ Learning
+```
+
+### Voice Switching
+```
+change voice to british female → Switch to uk_female
+set voice to uk male           → Switch to uk_male
+switch my voice to sonia       → Switch to uk_female
+use american female voice      → Switch to us_female
+list voices                    → Reads available presets
+available voices               → Reads available presets
+voice options                  → Reads available presets
 ```
 
 ---
