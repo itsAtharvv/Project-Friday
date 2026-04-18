@@ -1,0 +1,7 @@
+.env
+key.env
+__pycache__/
+*.pyc
+app_index.json
+kokoro-v1.0.onnx
+voices-v1.0.bin
