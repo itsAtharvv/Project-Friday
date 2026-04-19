@@ -1,47 +1,53 @@
-import requests
+import re
 
-def _looks_like_command(text: str) -> bool:
-    text = text.strip().lower()
-    return bool(text) and len(text.split()) <= 8
 
-NORMALIZE_PROMPT = """Convert natural language into a short command. Be aggressive about simplification.
-Output ONLY the simplified command. No explanation, no punctuation at the end.
+FILLERS = [
+    "hey friday",
+    "friday",
+    "can you",
+    "could you",
+    "would you",
+    "please",
+    "for me",
+    "just",
+]
 
-increase volume → volume up
-turn it up → volume up
-make it louder → volume up
-lower the volume → volume down
-turn it down → volume down
-make it quieter → volume down
-mute it → volume mute
-unmute → volume unmute
-dim the screen → brightness down
-make screen brighter → brightness up
-hey friday open chrome for me → open chrome
-can you please open discord → open discord
-open my downloads folder → open downloads
-take a picture of screen → screenshot
-what's the battery → battery status
-pause the music → pause
-skip this song → next song
-go back a song → previous song
-minimize everything → minimize all windows
-"""
+PHRASE_REWRITES = [
+    (r"\b(turn|increase|raise) (the )?volume (up)?\b", "volume up"),
+    (r"\b(make it|make the sound) louder\b", "volume up"),
+    (r"\b(turn|decrease|lower) (the )?volume (down)?\b", "volume down"),
+    (r"\b(make it|make the sound) quieter\b", "volume down"),
+    (r"\bmute( it)?\b", "mute"),
+    (r"\bunmute( it)?\b", "unmute"),
+    (r"\bdim (the )?screen\b", "brightness down"),
+    (r"\b(make|set) (the )?screen brighter\b", "brightness up"),
+    (r"\btake (a )?(picture|photo) of (the )?screen\b", "screenshot"),
+    (r"\bwhat('?s| is) (the )?battery\b", "battery status"),
+    (r"\bpause (the )?music\b", "pause"),
+    (r"\bskip (this )?(song|track)\b", "next song"),
+    (r"\bgo back (a )?(song|track)\b", "previous song"),
+    (r"\bminimize everything\b", "minimize all windows"),
+    (r"\bopen my (downloads|documents|desktop|pictures|music|videos)( folder)?\b", r"open \1"),
+]
+
+
+def _strip_fillers(text: str) -> str:
+    result = text.lower().strip()
+    for filler in FILLERS:
+        result = re.sub(rf"\b{re.escape(filler)}\b", " ", result)
+    return " ".join(result.split())
+
 
 def normalize(user_input: str) -> str:
-    try:
-        response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={
-                "model": "gemma4:e2b",
-                "prompt": f"{NORMALIZE_PROMPT}\n{user_input} →",
-                "stream": False,
-            },
-            timeout=15
-        )
-        result = response.json().get("response", "").strip().strip('"').strip("'")
-        if result and _looks_like_command(result):
-            return result
+    cleaned = _strip_fillers(user_input)
+    if not cleaned:
         return user_input
-    except:
-        return user_input
+
+    for pattern, replacement in PHRASE_REWRITES:
+        if re.search(pattern, cleaned, flags=re.IGNORECASE):
+            normalized = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
+            normalized = " ".join(normalized.split())
+            if normalized:
+                return normalized
+
+    return cleaned
