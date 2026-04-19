@@ -53,11 +53,6 @@ A sophisticated Windows-based AI voice assistant that enables complete PC contro
 - Variations: "10 second timer", "remind me in 1 hour"
 - Popup notification when timer completes
 
-### **OCR & Screen Reading** 📸
-- **Read mode**: "read screen", "what does it say" → extracts visible text
-- **Describe mode**: "what's on my screen", "describe screen" → provides summary
-- Uses local Ollama vision model (no API costs)
-
 ### **Multi-Turn Conversation** 💬
 - Natural dialogue: "what is machine learning?", "how does encryption work?"
 - Maintains last 8 conversation turns
@@ -129,8 +124,7 @@ Push projects to GitHub entirely by voice:
 | **stt.py** | Whisper speech-to-text, silence detection |
 | **tts.py** | Edge TTS voice generation, async playback |
 | **llm.py** | Groq API integration (dual models) |
-| **normalizer.py** | Ollama local model for language simplification |
-| **ocr.py** | Screen capture + Ollama vision for text extraction |
+| **normalizer.py** | Language simplification helper |
 | **tasks.py** | Project scaffolding, Git automation |
 | **ui.py** | PyQt6 audio visualizer |
 | **greeting.py** | Time-aware personalized greetings |
@@ -214,14 +208,6 @@ set timer for 5 minutes→ 5-min countdown
 remind me in 1 hour  → 60-min countdown
 ```
 
-### OCR / Screen Reading
-```
-read screen          → Extract visible text
-what does it say     → Read text
-what's on my screen  → Describe screen
-describe screen      → 2-3 sentence summary
-```
-
 ### Project Creation
 ```
 new python project   → Create Python scaffold
@@ -266,7 +252,7 @@ voice options                  → Reads available presets
 - **Python 3.11+**
 - **Microphone** for input
 - **Internet** for Groq API
-- **Ollama** for local models (optional but recommended)
+
 
 ### Step 1: Clone Repository
 ```bash
@@ -286,24 +272,14 @@ pip install -r requirements.txt
 	GROQ_API_KEY=your_api_key_here
 	```
 
-### Step 4: Install Ollama (Optional but Recommended)
-Download from https://ollama.com/download
-
-Required models:
-```bash
-ollama pull gemma4:e2b    # Text normalization
-ollama pull gemma4:e4b    # Screen OCR
-ollama serve              # Run in separate terminal
-```
-
-### Step 5: Run Friday
+### Step 4: Run Friday
 ```bash
 python main.py
 ```
 
 Access with **Ctrl+Shift+Space**
 
-### Step 6: Setup Git Credentials (for GitHub integration)
+### Step 5: Setup Git Credentials (for GitHub integration)
 ```bash
 git config --global credential.helper store
 ```
@@ -349,11 +325,8 @@ Friday: "Running 3 commands."
 [All commands execute in sequence]
 ```
 
-### Example 3: OCR & Chat
+### Example 3: Chat
 ```
-User: "read screen"
-Friday: [Extracts and speaks visible text]
-
 User: "what is artificial intelligence?"
 Friday: "AI refers to... [intelligent response]"
 ```
@@ -376,10 +349,6 @@ Friday: "AI refers to... [intelligent response]"
 - Reduce background noise
 - Check internet connection
 
-### **OCR not working**
-- Ensure Ollama is running: `ollama serve`
-- Verify models: `ollama list`
-
 ### **Groq API errors**
 - Verify `.env` has valid `GROQ_API_KEY`
 - Check rate limits (free tier: 30 requests/minute)
@@ -393,11 +362,10 @@ Friday: "AI refers to... [intelligent response]"
 ## ⚠️ Known Limitations
 
 1. **Windows-only** - Paths and commands are Windows-specific
-2. **Ollama optional** - Gracefully skips if unavailable
-3. **English-only** - No multi-language support
-4. **Microphone required** - No text input fallback
-5. **Internet-dependent** - Groq API requires connection
-6. **No persistent history** - Conversations cleared on exit
+2. **English-only** - No multi-language support
+3. **Microphone required** - No text input fallback
+4. **Internet-dependent** - Groq API requires connection
+5. **No persistent history** - Conversations cleared on exit
 
 ---
 
@@ -419,7 +387,7 @@ MIT License — Feel free to fork, modify, and use!
 
 ## 🎉 Credits
 Built with ❤️ by Atharv  
-Powered by: Whisper, Groq, Edge TTS, Ollama, PyQt6
+Powered by: Whisper, Groq, Edge TTS, PyQt6
 
 ---
 

@@ -341,32 +341,6 @@ def execute(command: dict):
         subprocess.Popen("PowerShell.exe -Command Clear-RecycleBin -Force", shell=True)
         print("[Executor] Recycle bin emptied")
 
-    elif action == "ocr":
-        from ocr import ocr_screen, describe_screen
-        from tts import speak
-
-        mode = command.get("mode", "read")
-        signals_ui = None
-        try:
-            from ui import signals
-            signals_ui = signals
-        except Exception:
-            pass
-
-        print("[OCR] Taking screenshot and reading...")
-        if signals_ui:
-            signals_ui.show_ui.emit("processing")
-            signals_ui.set_text.emit("Reading screen...")
-
-        if mode == "describe":
-            result = describe_screen()
-        else:
-            result = ocr_screen()
-
-        print(f"[OCR] Result: {result}")
-        speak(result)
-        return {"spoken": True, "result": result}
-
     elif action == "tts_voice":
         from tts import set_voice, speak
 

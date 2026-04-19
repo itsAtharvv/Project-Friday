@@ -117,9 +117,6 @@ TYPE_PATTERN       = re.compile(r"^type\s+(.+)$", re.IGNORECASE)
 SWITCH_PATTERN     = re.compile(r"^switch\s+to\s+(.+)$", re.IGNORECASE)
 NEW_FOLDER_PATTERN = re.compile(r"^create\s+(?:a\s+)?(?:new\s+)?folder\s+(?:called\s+|named\s+)?(.+?)(?:\s+(?:in|on|under)\s+(downloads|documents|desktop|pictures|music|videos))?$", re.IGNORECASE)
 NEW_FOLDER_IN_PATTERN = re.compile(r"^create\s+(?:a\s+)?(?:new\s+)?folder\s+(?:in|on|under)\s+(downloads|documents|desktop|pictures|music|videos)\s+(?:called\s+|named\s+)?(.+)$", re.IGNORECASE)
-OCR_QUESTION_PATTERN = re.compile(
-    r"^(what does|what do).*(say|show|display).*$", re.IGNORECASE
-)
 CREATE_PROJECT_PATTERN = re.compile(
     r"^(?:create|make|new|start)\s+(?:a\s+)?(\w+)\s+project$", re.IGNORECASE
 )
@@ -203,16 +200,6 @@ SYSTEM_COMMANDS = {
     "paste":                {"action": "clipboard", "command": "paste"},
     "paste clipboard":      {"action": "clipboard", "command": "paste"},
     "clear clipboard":      {"action": "clipboard", "command": "clear"},
-    "read screen":          {"action": "ocr", "mode": "read"},
-    "read this":            {"action": "ocr", "mode": "read"},
-    "what does it say":     {"action": "ocr", "mode": "read"},
-    "read the screen":      {"action": "ocr", "mode": "read"},
-    "what's on my screen":  {"action": "ocr", "mode": "describe"},
-    "whats on my screen":   {"action": "ocr", "mode": "describe"},
-    "what's on screen":     {"action": "ocr", "mode": "describe"},
-    "whats on screen":      {"action": "ocr", "mode": "describe"},
-    "describe my screen":   {"action": "ocr", "mode": "describe"},
-    "what is on screen":    {"action": "ocr", "mode": "describe"},
     "new python project":   {"action": "task", "task": "create_project", "type": "python"},
     "create python project":{"action": "task", "task": "create_project", "type": "python"},
     "new web project":      {"action": "task", "task": "create_project", "type": "web"},
@@ -516,11 +503,6 @@ def parse(user_input: str) -> dict | None:
 
     if cleaned.lower().startswith("go to ") and looks_like_url(cleaned[6:].strip()):
         return {"action": "url", "url": normalize_url(cleaned[6:].strip())}
-
-    # OCR question fallback (e.g. "what does this say")
-    m = OCR_QUESTION_PATTERN.match(cleaned)
-    if m:
-        return {"action": "ocr", "mode": "read"}
 
     # Create project pattern (e.g. "create a python project")
     m = CREATE_PROJECT_PATTERN.match(cleaned)
