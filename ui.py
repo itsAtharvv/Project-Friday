@@ -45,9 +45,9 @@ class VisualizerWidget(QWidget):
         self._audio_energy = 0.0
         self._stream = None
 
-        timer = QTimer(self)
-        timer.timeout.connect(self._tick)
-        timer.start(33)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._tick)
+        self.timer.start(33)
 
     def set_state(self, state: str):
         self.state = state
@@ -55,6 +55,10 @@ class VisualizerWidget(QWidget):
             self._start_mic()
         else:
             self._stop_mic()
+            
+        if state in ["listening", "processing", "speaking"]:
+            if not self.timer.isActive():
+                self.timer.start(33)
         self.update()
 
     def _start_mic(self):
@@ -91,7 +95,7 @@ class VisualizerWidget(QWidget):
         s = self.state
 
         if s == "idle":
-            return 3 + np.sin(t * 0.8 + i * 0.3) * 2
+            return 3.0
 
         if s == "listening":
             e = self._audio_energy
@@ -109,15 +113,23 @@ class VisualizerWidget(QWidget):
             return max(0, self.bars[i] * 0.85)
 
         if s == "error":
-            return 3 + np.sin(t * 8 + i * 0.6) * 4
+            return 3.0
 
         return 3
 
     def _tick(self):
         self.t += 0.05
+        active = False
         for i in range(BAR_COUNT):
-            self.bars[i] += (self._target(i) - self.bars[i]) * 0.2
+            target = self._target(i)
+            self.bars[i] += (target - self.bars[i]) * 0.2
+            if abs(self.bars[i] - target) > 0.05:
+                active = True
         self.update()
+        
+        if self.state in ["idle", "done", "error"] and not active:
+            if self.timer.isActive():
+                self.timer.stop()
 
     def paintEvent(self, event):
         p = QPainter(self)

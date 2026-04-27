@@ -1,0 +1,29 @@
+# ── Core AI / Speech ──────────────────────────────────────────────
+faster-whisper          # STT — replaces openai-whisper, faster + lower RAM
+groq                    # LLM API client
+edge-tts                # TTS — async, works on Linux
+openwakeword            # Wake word detection (offline)
+
+# ── Audio ─────────────────────────────────────────────────────────
+sounddevice             # Microphone input stream (replaces pyaudio)
+soundfile               # Audio file read/write (for sounddevice)
+numpy                   # Required by sounddevice + faster-whisper
+
+# ── UI ────────────────────────────────────────────────────────────
+PyQt6                   # Visualizer window
+PyQt6-Qt6               # Qt6 base
+PyQt6-sip               # PyQt6 dependency
+
+# ── Utilities ─────────────────────────────────────────────────────
+python-dotenv           # .env file loading (GROQ_API_KEY)
+requests                # HTTP requests (internet check for TTS fallback)
+asyncio                 # Already stdlib in Python 3.10+, listed for clarity
+
+# ── Removed (Windows-only, do not install) ────────────────────────
+# openai-whisper        → replaced by faster-whisper
+# pyaudio               → replaced by sounddevice
+# keyboard              → broken on Wayland, replaced by Unix socket
+# pygetwindow           → Windows only, replaced by hyprctl
+# pywin32 / win32gui    → Windows only
+# pyttsx3               → Windows TTS, replaced by edge-tts + piper
+# nircmd                → Windows binary, replaced by pactl/brightnessctl

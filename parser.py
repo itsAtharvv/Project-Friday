@@ -7,6 +7,15 @@ FILLER_WORDS = [
     "friday", "i want to", "i need to", "for me", "just", "my", "the"
 ]
 
+CODING_ACTIONS = ["write", "code", "create", "generate"]
+CODING_KEYWORDS = ["python", "javascript", "js", "html", "css", "bash", "script", "function", "class", "program", "algorithm", "api", "server", "bot", "app", "tool", "calculator", "converter", "parser", "scraper"]
+
+def is_coding_request(text: str) -> bool:
+    lower = text.lower()
+    has_action = any(re.search(rf"\b{w}\b", lower) for w in CODING_ACTIONS)
+    has_keyword = any(re.search(rf"\b{w}\b", lower) for w in CODING_KEYWORDS)
+    return has_action and has_keyword
+
 CHAIN_SEPARATORS = [
     " and then ", " then ", ", then ",
     " after that ", ", after that ",
@@ -114,7 +123,9 @@ TIMER_PATTERNS     = [
 ]
 FOLDER_PATTERN     = re.compile(r"^open\s+(downloads|documents|desktop|pictures|music|videos)\s*(?:folder)?$", re.IGNORECASE)
 TYPE_PATTERN       = re.compile(r"^type\s+(.+)$", re.IGNORECASE)
-SWITCH_PATTERN     = re.compile(r"^switch\s+to\s+(.+)$", re.IGNORECASE)
+WORKSPACE_PATTERN  = re.compile(r"^(?:switch|go)\s+to\s+workspace\s+(\d+)$", re.IGNORECASE)
+MOVE_WORKSPACE_PATTERN = re.compile(r"^move\s+(?:window\s+|this\s+|it\s+)?to\s+workspace\s+(\d+)$", re.IGNORECASE)
+SWITCH_PATTERN     = re.compile(r"^(?:focus|switch\s+to)\s+(.+)$", re.IGNORECASE)
 NEW_FOLDER_PATTERN = re.compile(r"^create\s+(?:a\s+)?(?:new\s+)?folder\s+(?:called\s+|named\s+)?(.+?)(?:\s+(?:in|on|under)\s+(downloads|documents|desktop|pictures|music|videos))?$", re.IGNORECASE)
 NEW_FOLDER_IN_PATTERN = re.compile(r"^create\s+(?:a\s+)?(?:new\s+)?folder\s+(?:in|on|under)\s+(downloads|documents|desktop|pictures|music|videos)\s+(?:called\s+|named\s+)?(.+)$", re.IGNORECASE)
 CREATE_PROJECT_PATTERN = re.compile(
@@ -170,6 +181,7 @@ SYSTEM_COMMANDS = {
     "raise volume":         {"action": "volume", "value": "up"},
     "mute":                 {"action": "volume", "value": "mute"},
     "unmute":               {"action": "volume", "value": "unmute"},
+    "silent mode":          {"action": "silent_mode", "value": "on"},
     "turn brightness up":   {"action": "brightness", "value": "up"},
     "turn brightness down": {"action": "brightness", "value": "down"},
     "dim screen":           {"action": "brightness", "value": "down"},
@@ -200,6 +212,8 @@ SYSTEM_COMMANDS = {
     "paste":                {"action": "clipboard", "command": "paste"},
     "paste clipboard":      {"action": "clipboard", "command": "paste"},
     "clear clipboard":      {"action": "clipboard", "command": "clear"},
+    "token status":         {"action": "token_status"},
+    "how many tokens":      {"action": "token_status"},
     "new python project":   {"action": "task", "task": "create_project", "type": "python"},
     "create python project":{"action": "task", "task": "create_project", "type": "python"},
     "new web project":      {"action": "task", "task": "create_project", "type": "web"},
@@ -363,6 +377,9 @@ def parse(user_input: str) -> dict | None:
     cleaned = clean_input(text)
     lower = cleaned.lower()
 
+    if is_coding_request(cleaned):
+        return {"action": "coding_request", "query": user_input}
+
     # System / one-word commands
     system_command = resolve_system_command(lower)
     if system_command:
@@ -452,12 +469,22 @@ def parse(user_input: str) -> dict | None:
             return {"action": "create_folder", "name": name, "path": FOLDER_PATHS[folder]}
         return {"action": "create_folder", "name": name}
 
+    # Workspace
+    m = WORKSPACE_PATTERN.match(cleaned)
+    if m:
+        return {"action": "workspace", "workspace": m.group(1)}
+
+    # Move to workspace
+    m = MOVE_WORKSPACE_PATTERN.match(cleaned)
+    if m:
+        return {"action": "move_workspace", "workspace": m.group(1)}
+
     # Type text
     m = TYPE_PATTERN.match(cleaned)
     if m:
         return {"action": "type", "text": m.group(1).strip()}
 
-    # Switch to app
+    # Switch to app / Focus window
     m = SWITCH_PATTERN.match(cleaned)
     if m:
         return {"action": "switch", "target": m.group(1).strip().lower()}

@@ -1,20 +1,15 @@
-import whisper
 import numpy as np
 import sounddevice as sd
-import tempfile
-import os
-import soundfile as sf
+from faster_whisper import WhisperModel
 
-model = whisper.load_model("small")
+# Load the model persistently once at startup
+model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
 
 SAMPLE_RATE = 16000
 CHUNK_DURATION = 0.5      # record in 0.5s chunks
 SILENCE_THRESHOLD = 0.005  # energy level below this = silence
 SILENCE_CHUNKS = 2        # stop after 2 silent chunks (1 second of silence)
 MAX_CHUNKS = 10           # max 5 seconds total
-
-def is_silent(chunk: np.ndarray) -> bool:
-    return np.sqrt(np.mean(chunk**2)) < SILENCE_THRESHOLD
 
 def listen():
     print("[STT] Listening...")
@@ -49,13 +44,9 @@ def listen():
 
     audio = np.concatenate(chunks)
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        sf.write(f.name, audio, SAMPLE_RATE)
-        tmp_path = f.name
+    # Transcribe directly from numpy array in memory, saving disk IO
+    segments, _ = model.transcribe(audio, vad_filter=True)
+    text = " ".join([segment.text for segment in segments]).strip()
 
-    result = model.transcribe(tmp_path)
-    os.remove(tmp_path)
-
-    text = result["text"].strip()
     print(f"[STT] Heard: {text}")
     return text

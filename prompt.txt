@@ -1,0 +1,306 @@
+Project Friday — Linux Port, Optimization & Enhancement Brief
+You are helping port and upgrade "Project Friday", a Python voice assistant originally built for Windows, to Linux. The developer is Atharv, an 18-year-old CS student, comfortable with terminal, Arch-based systems, and Hyprland configuration.
+Original project: https://github.com/itsAtharvv/Project-Friday
+SOURCE FILES — read every file before writing a single line of code:
+Do not rely on the README alone. Fetch and read every source file directly from the repository before making any changes. The actual implementation details, existing logic, regex patterns, API calls, and architecture are in the code — the README is just a summary.
+Read these files in this order:
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/main.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/parser.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/router.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/executor.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/llm.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/stt.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/tts.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/ui.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/audio.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/normalizer.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/greeting.py
+https://raw.githubusercontent.com/itsAtharvv/Project-Friday/main/tasks.py
+Rules for working with existing code:
+
+Identify what is already cross-platform and keep it exactly as-is — do not refactor working code unnecessarily
+Only touch the parts that are Windows-specific or need upgrading per this brief
+When replacing a Windows call, keep the same function name and signature so nothing upstream breaks
+Add new functions below existing ones, don't restructure files unless absolutely necessary
+If a file needs zero changes for Linux, say so explicitly and move on — don't rewrite it for the sake of it
+Preserve all existing regex patterns in parser.py — only add new ones for new features, never remove existing ones
+Preserve all existing Groq conversation logic in llm.py — only add the coding system prompt and token tracker on top
+Read the full README before proceeding. The architecture is: Whisper STT → regex parser → Groq API (LLM) → Edge TTS → PyQt6 UI.
+
+CONFIRMED SYSTEM SETUP — do not assume anything outside this:
+
+OS: CachyOS (Arch-based)
+Compositor: Hyprland + Wayland
+Shell environment: Caelestia running on Quickshell (qs -c caelestia)
+Terminal: Foot
+Shell: Fish
+Audio: PipeWire 1.4.3 with PulseAudio compatibility (pactl commands work)
+Screenshots: grim + slurp
+Lock screen: hyprctl dispatch global caelestia:lock
+Notifications: notify-send (standard libnotify, rendered by Caelestia/Quickshell)
+App launcher: Caelestia built-in (no rofi/wofi/fuzzel installed)
+Brightness: unknown — ask Atharv to run brightnessctl and confirm if installed before using it in any command
+Hardware: HP Omen AM0277TX — Intel Core i7-240H, RTX 5050 8GB, 24GB DDR5
+Python: use full binary path /usr/bin/python everywhere, never bare python
+
+
+CORE STACK — keep these, all cross-platform:
+
+faster-whisper with tiny.en model replacing standard whisper small — 4-8x faster, lower RAM, sufficient for English-only
+Groq API for LLM (works as-is, keep existing integration)
+edge-tts for TTS (works on Linux)
+PyQt6 for visualizer UI (works on Linux, add qt6-wayland package for proper Wayland rendering)
+
+
+WINDOWS COMPONENTS TO REPLACE:
+WindowsLinux Replacementnircmd.exe (volume)pactl set-sink-volume @DEFAULT_SINK@ +5%nircmd.exe (brightness)brightnessctl set 10%+ — confirm installed firstpygetwindow / win32guihyprctl clients -j / hyprctl dispatchGlobal hotkey (keyboard lib)Unix domain socket — see belowScreenshotgrim -g "$(slurp)" - | wl-copy (no disk write)Lock screenhyprctl dispatch global caelestia:lockAudio playback (winsound)paplay filename.wavTimer popup notificationnotify-send "Friday Timer" "Done!" --urgency=criticalClipboard read/writewl-copy / wl-pasteType text into windowwtype — install with sudo pacman -S wtype.bat launchersystemd user service — see below
+Files to delete entirely: nircmd.exe, nircmdc.exe, launch_friday.bat, testtts.py
+
+GLOBAL HOTKEY ON WAYLAND:
+The keyboard library does not work reliably on Wayland. Replace with a Unix domain socket approach. main.py opens /tmp/friday.sock on startup and listens for incoming messages via asyncio. A Hyprland bind writes to the socket.
+Add to hyprland.conf:
+bind = CTRL SHIFT, SPACE, exec, echo "trigger" | socat - UNIX-CONNECT:/tmp/friday.sock
+Socket listener in main.py:
+pythonimport asyncio, os
+
+async def socket_listener(trigger_callback):
+    sock_path = "/tmp/friday.sock"
+    if os.path.exists(sock_path):
+        os.remove(sock_path)
+    server = await asyncio.start_unix_server(
+        lambda r, w: trigger_callback(), sock_path
+    )
+    async with server:
+        await server.serve_forever()
+Install socat: sudo pacman -S socat
+
+AUTOSTART — replacing the .bat:
+Create ~/.config/systemd/user/friday.service:
+ini[Unit]
+Description=Project Friday Voice Assistant
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/python /home/atharv/Project-Friday/main.py
+Restart=on-failure
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+
+[Install]
+WantedBy=graphical-session.target
+Enable: systemctl --user enable --now friday
+Check logs: journalctl --user -u friday -f
+
+PERFORMANCE OPTIMIZATIONS — implement all:
+1. faster-whisper
+Replace whisper with faster-whisper. Load model once at startup into a persistent variable, never reload per-command:
+pythonfrom faster_whisper import WhisperModel
+model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+2. VAD filter
+Enable in every transcribe call — skips silence segments, speeds up transcription significantly:
+pythonsegments, _ = model.transcribe(audio, vad_filter=True)
+3. Visualizer framerate cap
+In ui.py, set QTimer interval to exactly 33ms (30fps cap). When Friday is idle (not listening, processing, or speaking), call timer.stop(). Resume with timer.start() on trigger. This eliminates constant GPU polling during idle.
+4. Async pipeline
+Ensure edge-tts is properly awaited throughout — never wrapped in threading hacks. STT and TTS must never block the main thread. Use asyncio end to end.
+5. Lazy imports
+Move heavy imports (torch, model loading) to after the UI window is visible, so startup feels instant to the user.
+
+NEW FEATURES TO ADD:
+1. Wake Word (offline, no hotkey needed)
+
+Library: openwakeword (pip install openwakeword)
+Run a persistent background thread using sounddevice microphone input stream
+On wake word detection, trigger the same listen pipeline as the hotkey
+Suggested built-in model: hey_jarvis
+Custom hey_friday model can be trained later with ~5 minutes of voice samples
+Hotkey remains as fallback — both should work simultaneously
+
+2. Hyprland-native window and workspace control
+Replace all broken pygetwindow calls with direct hyprctl commands:
+pythonimport subprocess, json
+
+def get_windows():
+    return json.loads(subprocess.check_output(["hyprctl", "clients", "-j"]))
+
+def focus_window(app_class):
+    subprocess.run(["hyprctl", "dispatch", "focuswindow", f"class:{app_class}"])
+
+def switch_workspace(n):
+    subprocess.run(["hyprctl", "dispatch", "workspace", str(n)])
+
+def move_to_workspace(n):
+    subprocess.run(["hyprctl", "dispatch", "movetoworkspace", str(n)])
+Voice commands to add: "switch to workspace 2", "focus firefox", "move window to workspace 3", "move this to workspace 2"
+3. mpris Media Control
+Replace all media key simulation with playerctl — works with Spotify, Firefox, mpv, VLC, anything implementing MPRIS:
+pythonsubprocess.run(["playerctl", "play-pause"])
+subprocess.run(["playerctl", "next"])
+subprocess.run(["playerctl", "previous"])
+subprocess.run(["playerctl", "volume", "0.5"])
+Also expose current song: playerctl metadata title — Friday reads it aloud on command "what's playing"
+Install: sudo pacman -S playerctl
+4. Notification integration
+pythondef notify(title, body, urgency="normal"):
+    subprocess.run(["notify-send", title, body, f"--urgency={urgency}"])
+
+Every Friday spoken response also sends a notification (urgency=normal)
+Timer completions use urgency=critical
+Add voice command "silent mode" — suppresses TTS audio but keeps notifications active
+Add voice command "unmute" to exit silent mode
+
+5. Piper TTS (offline fallback)
+
+Default stays as edge-tts (better voice quality, requires internet)
+If internet is unavailable, auto-fallback to piper-tts
+Voice: en_GB-alan-medium for a Friday-appropriate tone
+Install: sudo pacman -S piper-tts or check AUR
+
+pythonasync def speak(text):
+    if await internet_available():
+        await edge_tts_speak(text)
+    else:
+        piper_speak(text)
+6. Clipboard and typing
+python# Copy to clipboard
+subprocess.run(["wl-copy", text])
+# Paste from clipboard
+result = subprocess.check_output(["wl-paste"]).decode()
+# Type into active window
+subprocess.run(["wtype", text])
+
+FEATURE: Voice-triggered Code Generation → Active Editor
+When Friday detects a coding request, it sends it to Groq with a coding-specific system prompt, extracts only the code, and pastes it into the currently focused window using wtype.
+Trigger detection in parser.py:
+Coding request = ANY of these action words:
+write, code, create, generate
+AND ANY of these programming keywords:
+python, javascript, js, html, css, bash, script, function, class, program, algorithm, api, server, bot, app, tool, calculator, converter, parser, scraper
+Examples:
+
+"write a basic calculator in python" ✅
+"generate a javascript function to sort an array" ✅
+"create a bash script to rename files" ✅
+"write an email to my professor" ❌ (no programming keyword)
+
+Add intent CODING_REQUEST in router.py.
+Groq system prompt for coding requests:
+pythonCODING_SYSTEM_PROMPT = """You are a code generation assistant.
+When given a coding request, respond with ONLY the code.
+- Include helpful inline comments explaining what each section does
+- Do NOT include any markdown fences (no ```python or ```)
+- Do NOT include any explanation text before or after the code
+- Do NOT include any preamble like 'Here is the code:'
+- Just return the raw code with inline comments, nothing else"""
+Code extraction in llm.py — strip markdown fences defensively:
+pythonimport re
+
+def extract_code(response: str) -> str:
+    response = re.sub(r"```[\w]*\n?", "", response)
+    response = re.sub(r"```", "", response)
+    return response.strip()
+Pasting into active window in linux_executor.py:
+pythondef paste_code_to_editor(code: str):
+    # TODO: Replace wtype with editor extension socket integration
+    # Target: VS Code extension listening on /tmp/friday-editor.sock
+    # Will enable cursor-aware, context-aware code insertion
+    # For now, wtype pastes into whatever window is focused
+    try:
+        subprocess.run(["wtype", "--delay", "5", code], check=True)
+    except subprocess.CalledProcessError:
+        # Fallback to clipboard if wtype fails
+        subprocess.run(["wl-copy", code])
+        return "fallback"
+    return "ok"
+Full two-step paste flow:
+User: "write a calculator in python"
+Friday: "Ready to paste. Position your cursor and say go."
+User: "go"
+Friday: "Pasting now."
+[wtype executes with --delay 5]
+[done.wav plays]
+If paste_code_to_editor returns "fallback", Friday says: "Couldn't paste, copied to clipboard instead."
+Coding request edge cases:
+
+Groq returns empty string → say "Got an empty response" + play error.wav
+Groq 429 rate limit → say "Rate limit hit, try again in a moment" + play error.wav, do NOT auto-retry
+Response exceeds 800 tokens → say "Large response incoming, pasting now" before wtype executes
+wtype fails entirely → fallback to wl-copy silently, notify user
+
+
+GROQ MODEL STRATEGY — preserve free tier limits:
+Never route everything to the heavy model. Split strictly by task:
+TaskModelVoice commands, system controlllama-3.1-8b-instantGeneral chat / conversationllama-3.1-8b-instantCoding requestsllama-3.3-70b-versatile
+Free tier limits for reference:
+
+llama-3.1-8b-instant: 14,400 requests/day, 20,000 tokens/minute
+llama-3.3-70b-versatile: 1,000 requests/day, 6,000 tokens/minute
+
+Extend router.py to route CODING_REQUEST intent to the heavy model and everything else to the fast model.
+Token awareness — in-memory tracker in llm.py:
+pythonimport time
+
+token_log = {"minute_start": time.time(), "tokens_used": 0}
+
+def update_token_count(usage):
+    now = time.time()
+    if now - token_log["minute_start"] > 60:
+        token_log["minute_start"] = now
+        token_log["tokens_used"] = 0
+    token_log["tokens_used"] += usage.prompt_tokens + usage.completion_tokens
+
+def get_token_status():
+    return token_log["tokens_used"]
+Add voice command "token status" or "how many tokens" → Friday says aloud: "Used X tokens this minute out of 6000." No persistent logging, in-memory per session only.
+
+FILE STRUCTURE CHANGES:
+Remove these files entirely:
+
+nircmd.exe
+nircmdc.exe
+launch_friday.bat
+testtts.py
+
+Add these new files:
+
+linux_executor.py — all Linux system calls, replaces Windows calls in executor.py
+socket_listener.py — Unix socket hotkey bridge
+wakeword.py — openwakeword background thread
+piper_tts.py — offline TTS fallback
+
+Refactor:
+
+executor.py — keep file, import Linux implementations from linux_executor.py
+
+
+DEVELOPER PREFERENCES — strictly follow every session:
+
+Always explain what a change does before applying it
+One step at a time — single commands, not large copy-paste blocks
+If something breaks, revert immediately rather than iterating on broken state
+Prefer lean setups — do not add dependencies that aren't strictly necessary
+Always use full binary paths: /usr/bin/python, /usr/bin/pactl, etc. — never bare commands
+Fish shell syntax when writing any shell scripts
+English only, no Hindi
+Ask Atharv to confirm each module works before moving to the next one
+
+
+IMPLEMENTATION ORDER — follow this exactly, do not skip ahead:
+
+executor.py → replace all Windows system calls with Linux equivalents (volume, brightness, screenshot, lock, app launch). Test each command individually before moving on.
+socket_listener.py → Unix socket hotkey bridge + hyprland.conf bind. Test that Ctrl+Shift+Space triggers Friday.
+stt.py → swap whisper for faster-whisper with tiny.en + VAD filter. Test transcription speed and accuracy.
+ui.py → add qt6-wayland support, framerate cap, idle pause. Test visualizer renders correctly on Wayland.
+tts.py → verify edge-tts works, add piper fallback in piper_tts.py. Test both paths.
+audio.py → replace winsound with paplay. Test sound effects play correctly.
+wakeword.py → openwakeword background thread. Test wake word triggers listen pipeline.
+Hyprland controls → workspace switching, window focus in linux_executor.py. Test each command.
+mpris media control → playerctl integration. Test with whatever media player Atharv uses.
+Notification integration → notify-send, silent mode toggle. Test notifications appear in Caelestia.
+Coding pipeline → CODING_REQUEST intent, Groq routing, extract_code, wtype paste flow. Test end to end.
+Token tracker → in-memory counter, "token status" voice command. Test readout is accurate.
+systemd service → autostart on login. Test Friday starts automatically and logs are clean.
+
+
+FUTURE UPGRADE — document but do not implement:
+Editor extension integration: a VS Code / Neovim extension that opens a local WebSocket or Unix socket at /tmp/friday-editor.sock, receives code from Friday, and inserts it at the correct cursor position with full language and indentation awareness. When built, only paste_code_to_editor() in linux_executor.py needs to change — keep it isolated for exactly this reason.

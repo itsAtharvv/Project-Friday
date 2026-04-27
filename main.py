@@ -1,5 +1,4 @@
 import threading
-import keyboard
 import time
 from tts import speak, wait_until_done
 from greeting import get_greeting
@@ -83,9 +82,28 @@ def conversation_loop(initial_text: str):
     text = initial_text
 
     while True:
-        # straight to Groq - no pipeline
         show("processing", f'"{text}"', delay=0.1)
 
+        # Try the command pipeline first — handles "open firefox", volume, etc.
+        # even mid-conversation
+        if handle_command(text):
+            print(f"[ConvLoop] Handled as command: {text}")
+            # Stay in conversation: listen for what they say next
+            play_listen()
+            show("listening", "")
+            next_text = listen()
+            show("processing", f'"{next_text}"' if next_text else "", delay=0.1)
+            if not next_text or is_stop(next_text):
+                speak("Alright.")
+                wait_until_done()
+                play_done()
+                signals.hide_ui.emit()
+                conversation_history = []
+                return
+            text = next_text
+            continue
+
+        # Not a command — send to Groq for conversational response
         from groq import Groq
         import os
         from dotenv import load_dotenv
@@ -116,6 +134,8 @@ def conversation_loop(initial_text: str):
                 temperature=0.7,
                 max_tokens=120,  # keep it short for voice
             )
+            from llm import update_token_count
+            update_token_count(response.usage)
             reply = response.choices[0].message.content.strip()
         except Exception as e:
             reply = "Sorry, I couldn't reach my brain right now."
@@ -127,9 +147,9 @@ def conversation_loop(initial_text: str):
         print(f"[Friday] {reply}")
         show("speaking", reply)
         speak(reply)
-        wait_until_done()  # wait for TTS to ACTUALLY finish, not a guess
+        wait_until_done()
 
-        # listen for follow-up
+        # Listen for follow-up
         play_listen()
         show("listening", "")
         next_text = listen()
@@ -207,9 +227,10 @@ def trigger_activation():
 
 
 def hotkey_listener():
-    print("[Friday] Running silently. Press Ctrl+Shift+Space to activate.")
-    keyboard.add_hotkey("ctrl+shift+space", trigger_activation)
-    keyboard.wait()
+    import asyncio
+    from socket_listener import socket_listener
+    print("[Friday] Running silently. Send to /tmp/friday.sock to activate.")
+    asyncio.run(socket_listener(trigger_activation))
 
 
 if __name__ == "__main__":
@@ -217,5 +238,7 @@ if __name__ == "__main__":
     t1 = threading.Thread(target=hotkey_listener, daemon=True)
     t1.start()
 
+    from wakeword import start_wakeword_thread
+    start_wakeword_thread(trigger_activation)
 
     run_app()

@@ -14,8 +14,14 @@ VOICE_PRESETS = {
     "us_male": "en-US-GuyNeural",
 }
 VOICE = VOICE_PRESETS["uk_female"]
+SILENT_MODE = False
 
 _tts_done = threading.Event()
+
+def set_silent_mode(enabled: bool):
+    global SILENT_MODE
+    SILENT_MODE = enabled
+    print(f"[TTS] Silent mode {'enabled' if enabled else 'disabled'}")
 
 
 def available_voices() -> dict[str, str]:
@@ -41,7 +47,14 @@ def get_voice() -> str:
 
 def speak(text: str):
     """Non-blocking Edge TTS playback that signals when audio is finished."""
+    import linux_executor
+    linux_executor.notify("Friday", text, "normal")
+
     _tts_done.clear()
+    
+    if SILENT_MODE:
+        _tts_done.set()
+        return
 
     def _run():
         try:

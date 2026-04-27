@@ -4,35 +4,21 @@ import json
 import webbrowser
 import threading
 import time
-import pyautogui
 import psutil
 from difflib import get_close_matches
 from pathlib import Path
 from urllib.parse import quote_plus
 from parser import APP_ALIASES
+import linux_executor
 
-try:
-    import screen_brightness_control as sbc
-    BRIGHTNESS_AVAILABLE = True
-except Exception:
-    BRIGHTNESS_AVAILABLE = False
-
-VOLUME_AVAILABLE = True  # always True now, no dependencies
-NIRCMD = r"C:\Users\Atharv\Documents\Projects\Project friday\nircmd.exe"
+VOLUME_AVAILABLE = True
+BRIGHTNESS_AVAILABLE = True
 
 APP_MAP = {
-    "explorer":   "explorer.exe",
-    "notepad":    "notepad.exe",
-    "calculator": "calc.exe",
-    "cmd":        "cmd.exe",
-    "terminal":   "wt",
-    "taskmgr":    "taskmgr.exe",
+    "terminal":   "foot",
+    "explorer":   "nautilus", 
+    "browser":    "firefox",
 }
-
-START_MENU_PATHS = [
-    Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
-    Path("C:/ProgramData/Microsoft/Windows/Start Menu/Programs"),
-]
 
 INDEX_FILE = "app_index.json"
 
@@ -44,25 +30,18 @@ SEARCH_ENGINES = {
     "spotify": "https://open.spotify.com/search/",
 }
 
-
 def build_index() -> dict:
-    index = {}
-    for base in START_MENU_PATHS:
-        for lnk in base.rglob("*.lnk"):
-            name = lnk.stem.lower().strip()
-            index[name] = str(lnk)
+    index = linux_executor.build_linux_index()
     with open(INDEX_FILE, "w") as f:
         json.dump(index, f, indent=2)
     print(f"[Index] Built with {len(index)} apps")
     return index
-
 
 def load_index() -> dict:
     if os.path.exists(INDEX_FILE):
         with open(INDEX_FILE) as f:
             return json.load(f)
     return build_index()
-
 
 def fuzzy_match(target: str, index: dict) -> str | None:
     target = target.lower().strip()
@@ -97,83 +76,14 @@ def fuzzy_match(target: str, index: dict) -> str | None:
         return index[best]
     return None
 
-
 def resolve_alias(target: str) -> str:
     target = target.lower().strip()
     if target in APP_ALIASES:
         return APP_ALIASES[target]
-
     close_match = get_close_matches(target, list(APP_ALIASES.keys()), n=1, cutoff=0.8)
     if close_match:
         return APP_ALIASES[close_match[0]]
-
     return target
-
-
-def paste_text(text: str) -> bool:
-    try:
-        import tkinter as tk
-
-        root = tk.Tk()
-        root.withdraw()
-        root.clipboard_clear()
-        root.clipboard_append(text)
-        root.update()
-        pyautogui.hotkey("ctrl", "v")
-        root.destroy()
-        return True
-    except Exception:
-        return False
-
-
-def set_volume(value: str):
-    import os
-    nircmd_exists = os.path.exists(NIRCMD)
-
-    if value == "mute":
-        if nircmd_exists:
-            subprocess.Popen([NIRCMD, "mutesysvolume", "1"])
-        else:
-            pyautogui.press('volumemute')
-        print("[Volume] Muted")
-
-    elif value == "unmute":
-        if nircmd_exists:
-            subprocess.Popen([NIRCMD, "mutesysvolume", "0"])
-        else:
-            pyautogui.press('volumemute')
-        print("[Volume] Unmuted")
-
-    elif value == "up":
-        if nircmd_exists:
-            subprocess.Popen([NIRCMD, "changesysvolume", "6553"])
-        else:
-            for _ in range(5): pyautogui.press('volumeup')
-        print("[Volume] Up")
-
-    elif value == "down":
-        if nircmd_exists:
-            subprocess.Popen([NIRCMD, "changesysvolume", "-6553"])
-        else:
-            for _ in range(5): pyautogui.press('volumedown')
-        print("[Volume] Down")
-
-    elif value.isdigit():
-        level = int(value)
-        if nircmd_exists:
-            nircmd_level = int((level / 100) * 65535)
-            subprocess.Popen([NIRCMD, "setsysvolume", str(nircmd_level)])
-        else:
-            print("[Volume] Can't set exact level without nircmd")
-        print(f"[Volume] Set to {level}%")
-
-
-def timer_thread(seconds: int):
-    print(f"[Timer] Started for {seconds} seconds")
-    time.sleep(seconds)
-    pyautogui.alert(f"Timer done! ({seconds}s)", title="Friday Timer")
-    print("[Timer] Done")
-
 
 def execute(command: dict):
     action = command.get("action")
@@ -188,7 +98,7 @@ def execute(command: dict):
         lnk = fuzzy_match(target, index)
         if lnk:
             try:
-                os.startfile(lnk)
+                linux_executor.open_app_linux(lnk)
                 print(f"[Executor] Opened: {lnk}")
             except Exception as e:
                 print(f"[Executor] Failed: {e}")
@@ -203,8 +113,7 @@ def execute(command: dict):
             name = proc.info.get("name") or ""
             name_lower = name.lower()
             processes.append((name_lower, proc))
-            base_name = name_lower[:-4] if name_lower.endswith(".exe") else name_lower
-            if target == name_lower or target == base_name:
+            if target == name_lower:
                 proc.kill()
                 print(f"[Executor] Closed: {name}")
                 closed = True
@@ -231,7 +140,6 @@ def execute(command: dict):
     elif action == "search":
         engine = command.get("engine", "google").lower()
         if engine not in SEARCH_ENGINES:
-            print(f"[Executor] Unknown search engine '{engine}', using google")
             engine = "google"
         query = quote_plus(command.get("query", ""))
         base = SEARCH_ENGINES.get(engine, SEARCH_ENGINES["google"])
@@ -243,39 +151,48 @@ def execute(command: dict):
         print(f"[Executor] URL: {command.get('url')}")
 
     elif action == "system":
-        subprocess.Popen(command.get("command", ""), shell=True)
-        print(f"[Executor] System: {command.get('command')}")
+        cmd = command.get("command", "")
+        # Replace Windows commands with Linux
+        if cmd == "shutdown /s /t 0":
+            cmd = "systemctl poweroff"
+        elif cmd == "shutdown /r /t 0":
+            cmd = "systemctl reboot"
+        elif "rundll32" in cmd and "LockWorkStation" in cmd:
+            linux_executor.lock_screen()
+            print("[Executor] Screen locked")
+            return
+        elif "rundll32" in cmd and "SetSuspendState" in cmd:
+            cmd = "systemctl suspend"
+            
+        subprocess.Popen(cmd, shell=True)
+        print(f"[Executor] System: {cmd}")
+        
+    elif action == "silent_mode":
+        from tts import set_silent_mode
+        set_silent_mode(True)
+        print("[Executor] Silent mode ON")
 
     elif action == "volume":
-        set_volume(command.get("value", ""))
+        if command.get("value") == "unmute":
+            from tts import set_silent_mode
+            set_silent_mode(False)
+            print("[Executor] Silent mode OFF")
+        linux_executor.set_volume(command.get("value", ""))
 
     elif action == "brightness":
-        if not BRIGHTNESS_AVAILABLE:
-            print("[Brightness] screen-brightness-control not available")
-            return
-        val = command.get("value", "")
-        current = sbc.get_brightness()[0]
-        if val == "up":
-            sbc.set_brightness(min(100, current + 10))
-        elif val == "down":
-            sbc.set_brightness(max(0, current - 10))
-        elif val.isdigit():
-            sbc.set_brightness(int(val))
-        print(f"[Executor] Brightness: {val}")
+        linux_executor.set_brightness(command.get("value", ""))
 
     elif action == "screenshot":
-        path = str(Path.home() / "Desktop" / f"screenshot_{int(time.time())}.png")
-        pyautogui.screenshot(path)
-        print(f"[Executor] Screenshot saved: {path}")
+        linux_executor.take_screenshot()
 
     elif action == "timer":
         seconds = command.get("seconds", 0)
-        t = threading.Thread(target=timer_thread, args=(seconds,), daemon=True)
+        t = threading.Thread(target=linux_executor.timer_notification, args=(seconds,), daemon=True)
         t.start()
 
     elif action == "open_folder":
         path = command.get("path", "")
-        os.startfile(path)
+        subprocess.Popen(["xdg-open", path])
         print(f"[Executor] Opened folder: {path}")
 
     elif action == "create_folder":
@@ -288,62 +205,83 @@ def execute(command: dict):
 
     elif action == "type":
         text = command.get("text", "")
-        time.sleep(0.3)
-        if not paste_text(text):
-            pyautogui.typewrite(text, interval=0.05)
+        time.sleep(1.5)
+        linux_executor.paste_text(text)
         print(f"[Executor] Typed: {text}")
+
+    elif action == "workspace":
+        linux_executor.switch_workspace(command.get("workspace", "1"))
+        
+    elif action == "move_workspace":
+        linux_executor.move_to_workspace(command.get("workspace", "1"))
 
     elif action == "switch":
         target = command.get("target", "")
-        for proc in psutil.process_iter(["name", "pid"]):
-            name = proc.info.get("name") or ""
-            if target in name.lower():
-                pyautogui.hotkey("alt", "tab")
-                print("[Executor] Switched (alt+tab)")
-                break
+        linux_executor.switch_window(target)
 
     elif action == "window":
         cmd = command.get("command", "")
         if cmd == "minimize_all":
-            pyautogui.hotkey("win", "d")
-            print("[Executor] Minimized all windows")
+            linux_executor.minimize_all_windows()
 
     elif action == "clipboard":
         cmd = command.get("command", "")
-        if cmd == "copy":
-            pyautogui.hotkey("ctrl", "c")
-        elif cmd == "paste":
-            pyautogui.hotkey("ctrl", "v")
-        elif cmd == "clear":
-            pyautogui.hotkey("win", "v")
-        print(f"[Executor] Clipboard: {cmd}")
+        linux_executor.clipboard_action(cmd)
 
     elif action == "media":
         cmd = command.get("command", "")
-        if cmd == "next":
-            pyautogui.press("nexttrack")
-        elif cmd == "previous":
-            pyautogui.press("prevtrack")
-        elif cmd == "pause":
-            pyautogui.press("playpause")
-        print(f"[Executor] Media: {cmd}")
+        linux_executor.media_action(cmd)
 
     elif action == "battery":
         battery = psutil.sensors_battery()
         if battery:
             status = "charging" if battery.power_plugged else "discharging"
             print(f"[Battery] {battery.percent:.0f}% - {status}")
-            pyautogui.alert(f"Battery: {battery.percent:.0f}% ({status})", title="Friday")
+            subprocess.run(["notify-send", "Friday", f"Battery: {battery.percent:.0f}% ({status})"])
         else:
             print("[Battery] No battery found")
 
     elif action == "empty_recycle_bin":
-        subprocess.Popen("PowerShell.exe -Command Clear-RecycleBin -Force", shell=True)
+        linux_executor.empty_recycle_bin()
         print("[Executor] Recycle bin emptied")
+        
+    elif action == "token_status":
+        from llm import get_token_status
+        from tts import speak
+        used = get_token_status()
+        speak(f"Used {used} tokens this minute out of 6000.")
+
+    elif action == "coding_request":
+        from llm import generate_code
+        from tts import speak
+        from audio import play_error, play_done
+        
+        query = command.get("query")
+        code = generate_code(query)
+        if not code:
+            speak("Got an empty response.")
+            play_error()
+            return {"spoken": True, "result": "Empty response"}
+            
+        if code == "RATE_LIMIT":
+            speak("Rate limit hit, try again in a moment.")
+            play_error()
+            return {"spoken": True, "result": "Rate limit"}
+            
+        speak("Ready to paste. Switching focus in 3 seconds.")
+        time.sleep(3)
+        if len(code) > 3000:
+            speak("Large response incoming, pasting now.")
+        else:
+            speak("Pasting now.")
+        res = linux_executor.paste_code_to_editor(code)
+        play_done()
+        if res == "fallback":
+            speak("Couldn't paste, copied to clipboard instead.")
+        return {"spoken": True, "result": "Paste sequence complete"}
 
     elif action == "tts_voice":
         from tts import set_voice, speak
-
         preset = command.get("preset", "")
         labels = {
             "uk_female": "British female",
@@ -351,20 +289,17 @@ def execute(command: dict):
             "us_female": "American female",
             "us_male": "American male",
         }
-
         if set_voice(preset):
             label = labels.get(preset, preset.replace("_", " "))
             message = f"Voice changed to {label}."
         else:
             message = "I could not find that voice. Say available voices to hear options."
-
         print(f"[TTS] {message}")
         speak(message)
         return {"spoken": True, "result": message}
 
     elif action == "tts_voice_list":
         from tts import available_voices, speak
-
         voices = ", ".join(sorted(available_voices().keys()))
         message = f"Available voices are: {voices}."
         print(f"[TTS] {message}")
@@ -375,7 +310,6 @@ def execute(command: dict):
         task = command.get("task")
         if task == "create_project":
             from tasks import create_project
-
             project_type = command.get("type", "python")
             threading.Thread(
                 target=create_project,
@@ -384,7 +318,6 @@ def execute(command: dict):
             ).start()
         elif task == "push_to_github":
             from tasks import push_to_github
-
             threading.Thread(
                 target=push_to_github,
                 daemon=True
@@ -393,9 +326,7 @@ def execute(command: dict):
     elif action == "unknown":
         print(f"[Executor] Can't handle: {command.get('reason')}")
 
-
 if __name__ == "__main__":
     import sys
-
     if "--reindex" in sys.argv:
         build_index()

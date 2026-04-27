@@ -1,24 +1,26 @@
 # Project Friday 🤖
 
-A sophisticated Windows-based AI voice assistant that enables complete PC control through natural voice commands. Triggered with **Ctrl+Shift+Space**, Friday intelligently routes commands to AI models, executes them, and provides voice feedback.
+A sophisticated cross-platform (Windows & Linux) AI voice assistant that enables complete PC control through natural voice commands. Triggered with global hotkeys or wake words, Friday intelligently routes commands to AI models, executes them, and provides voice feedback.
 
 ---
 
 ## ✨ Features
 
 ### **Voice Activation & Interface**
-- 🎤 Global hotkey trigger: **Ctrl+Shift+Space**
+- 🎤 **Windows**: Global hotkey trigger (**Ctrl+Shift+Space**)
+- 🎤 **Linux**: Wake Word activation via `openwakeword` & `faster-whisper` OR Unix socket-based hotkey system for Wayland/Hyprland
 - 🎨 Real-time PyQt6 UI with animated 48-bar audio visualizer
 - 🔊 Voice feedback with text display
 - 📊 Visual state indicators: listening → processing → speaking → done
 
-### **System Control**
+### **System Control (Cross-Platform)**
 - Power management: shutdown, restart, sleep, lock screen
 - Volume control: up, down, mute, unmute, set percentage (0-100)
 - Brightness control: up, down, set percentage (0-100)
-- Screenshot capture with timestamp
-- Battery status check
-- Empty recycle bin, minimize all windows
+- Screenshot capture
+- Empty recycle bin
+- **Windows-specific**: minimize all windows (`Win+D`), battery status check
+- **Linux-specific**: switch workspaces, move windows
 
 ### **Application Management**
 - Launch any installed app by voice: "open chrome", "start vscode"
@@ -119,9 +121,11 @@ Push projects to GitHub entirely by voice:
 |--------|---------|
 | **main.py** | Hotkey listener, command pipeline, event orchestration |
 | **parser.py** | 40+ regex patterns for command parsing |
-| **executor.py** | System automation, app launching, file operations |
+| **executor.py / linux_executor.py** | OS-specific system automation, app launching, file operations |
+| **socket_listener.py** | (Linux) Unix domain socket server for triggering |
+| **wakeword.py** | (Linux) OpenWakeWord integration |
 | **router.py** | LLM model selection, conversation intent routing |
-| **stt.py** | Whisper speech-to-text, silence detection |
+| **stt.py** | Whisper / faster-whisper speech-to-text, silence detection |
 | **tts.py** | Edge TTS voice generation, async playback |
 | **llm.py** | Groq API integration (dual models) |
 | **normalizer.py** | Language simplification helper |
@@ -140,10 +144,10 @@ shutdown              → Power down
 restart               → Reboot system
 sleep                 → Hibernate
 lock (or lock screen) → Lock workstation
-screenshot           → Save to Desktop
-battery              → Show battery status
+screenshot           → Capture screen
+battery              → Show battery status (Windows)
 empty recycle bin    → Purge trash
-minimize all         → Win+D (show desktop)
+minimize all         → Show desktop (Windows)
 ```
 
 ### Volume Control
@@ -176,7 +180,7 @@ resume               → Play
 open chrome          → Launch app
 launch vscode        → Start editor
 close spotify        → Kill app
-switch to discord    → Alt+Tab
+switch to discord    → Focus app
 ```
 
 ### Web & Search
@@ -247,60 +251,82 @@ voice options                  → Reads available presets
 
 ## 🚀 Installation
 
-### Requirements
-- **Windows 10/11** (hotkey system is Windows-only)
+### 💻 Windows Setup
+
+#### Requirements
+- **Windows 10/11**
 - **Python 3.11+**
 - **Microphone** for input
 - **Internet** for Groq API
 
+#### Installation Steps
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/itsAtharvv/project-friday.git
+   cd project-friday
+   ```
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Get a free Groq API key from https://console.groq.com/keys and create a `.env` file in the project root:
+   ```env
+   GROQ_API_KEY=your_api_key_here
+   ```
+4. Run Friday:
+   ```bash
+   python main.py
+   ```
+5. Trigger with **Ctrl+Shift+Space**.
 
-### Step 1: Clone Repository
-```bash
-git clone https://github.com/itsAtharvv/project-friday.git
-cd project-friday
-```
 
-### Step 2: Install Dependencies
-```bash
-pip install -r requirements.txt
-```
+### 🐧 Linux Setup (Wayland / Hyprland)
 
-### Step 3: Setup Groq API
-1. Get free API key from https://console.groq.com/keys
-2. Create `.env` file in project root:
-	```env
-	GROQ_API_KEY=your_api_key_here
-	```
+#### Requirements
+- **Linux (Wayland/Hyprland recommended)**
+- **Python 3.11+**
+- **Microphone** for input
+- **Internet** for Groq API
+- System tools: `wtype`, `wl-copy`, `grim`, `slurp`, `playerctl`, `brightnessctl`, `pactl`, `socat`
 
-### Step 4: Run Friday
-```bash
-python main.py
-```
-
-Access with **Ctrl+Shift+Space**
-
-### Step 5: Setup Git Credentials (for GitHub integration)
-```bash
-git config --global credential.helper store
-```
-
-Then do one manual git push anywhere — credentials are cached forever.
+#### Installation Steps
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/itsAtharvv/project-friday.git
+   cd project-friday
+   ```
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Get a free Groq API key from https://console.groq.com/keys and create a `.env` file in the project root:
+   ```env
+   GROQ_API_KEY=your_api_key_here
+   ```
+4. Run Friday:
+   ```bash
+   python main.py
+   ```
+5. Trigger using your Wake Word (e.g. **"Hey Jarvis"**) or by setting up a keybind in your Window Manager to send a signal to the Unix socket:
+   ```bash
+   echo "start_listening" | socat - UNIX-CONNECT:/tmp/friday.sock
+   ```
 
 ---
 
 ## ⚙️ Configuration
 
 ### GitHub Username (for push_to_github)
-Edit tasks.py line 10:
+Edit `tasks.py` line 10:
 ```python
 GITHUB_USERNAME = "your_github_username"
 ```
 
 ### Voice Settings
-- **TTS Voice**: UK English (Ryan) — configurable in tts.py
-- **STT Model**: Whisper small (local, ~1GB)
+- **TTS Voice**: UK English (Ryan) — configurable in `tts.py`
+- **STT Model**: Whisper / faster-whisper small (local, ~1GB)
 - **LLM Models**: Groq (remote, requires API)
-- **Conversation turns**: 8 (configurable in main.py)
+- **Conversation turns**: 8 (configurable in `main.py`)
 
 ---
 
@@ -335,19 +361,17 @@ Friday: "AI refers to... [intelligent response]"
 
 ## 🛠️ Troubleshooting
 
-### **Hotkey not working**
-- Ensure Friday is running: `python main.py`
-- Check that no other app has Ctrl+Shift+Space registered
-- Run as Administrator if needed
+### **Hotkey / Activation not working**
+- **Windows**: Check that no other app has Ctrl+Shift+Space registered. Run as Administrator if needed.
+- **Linux**: Check if `socat` is installed and `/tmp/friday.sock` exists. For wake word, check microphone config in PulseAudio/PipeWire.
 
 ### **Microphone issues**
-- Test in Windows Sound Settings
-- Ensure microphone is default input device
+- Test in System Sound Settings.
+- Ensure microphone is default input device.
 
 ### **STT errors ("Didn't catch that")**
-- Speak clearly and closer to mic
-- Reduce background noise
-- Check internet connection
+- Speak clearly and closer to mic.
+- Reduce background noise.
 
 ### **Groq API errors**
 - Verify `.env` has valid `GROQ_API_KEY`
@@ -361,11 +385,10 @@ Friday: "AI refers to... [intelligent response]"
 
 ## ⚠️ Known Limitations
 
-1. **Windows-only** - Paths and commands are Windows-specific
-2. **English-only** - No multi-language support
-3. **Microphone required** - No text input fallback
-4. **Internet-dependent** - Groq API requires connection
-5. **No persistent history** - Conversations cleared on exit
+1. **OS-specific nuances** - Some commands like "minimize all" are Windows-only, while switching workspaces is Hyprland-only.
+2. **English-only** - No multi-language support.
+3. **Internet-dependent** - Groq API requires connection (wake word is local).
+4. **No persistent history** - Conversations cleared on exit.
 
 ---
 
@@ -374,9 +397,8 @@ Friday: "AI refers to... [intelligent response]"
 - [ ] Multi-language support
 - [ ] Email/Calendar integration
 - [ ] Browser automation
-- [ ] Custom wake word
 - [ ] Offline LLM support
-- [ ] Mac/Linux support
+- [ ] Mac support
 
 ---
 

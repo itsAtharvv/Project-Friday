@@ -3,6 +3,20 @@ import re
 import os
 from dotenv import load_dotenv
 from groq import Groq
+import time
+
+token_log = {"minute_start": time.time(), "tokens_used": 0}
+
+def update_token_count(usage):
+    if not usage: return
+    now = time.time()
+    if now - token_log["minute_start"] > 60:
+        token_log["minute_start"] = now
+        token_log["tokens_used"] = 0
+    token_log["tokens_used"] += usage.prompt_tokens + usage.completion_tokens
+
+def get_token_status():
+    return token_log["tokens_used"]
 
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -49,6 +63,38 @@ Answer the user's question or respond naturally and concisely.
 Keep responses short — 2-3 sentences max since this will be spoken aloud.
 """
 
+CODING_SYSTEM_PROMPT = """You are a code generation assistant.
+When given a coding request, respond with ONLY the code.
+- Include helpful inline comments explaining what each section does
+- Do NOT include any markdown fences (no ```python or ```)
+- Do NOT include any explanation text before or after the code
+- Do NOT include any preamble like 'Here is the code:'
+- Just return the raw code with inline comments, nothing else"""
+
+def extract_code(response: str) -> str:
+    response = re.sub(r"```[\w]*\n?", "", response)
+    response = re.sub(r"```", "", response)
+    return response.strip()
+
+def generate_code(user_input: str) -> str:
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_MAP["large"],
+            messages=[
+                {"role": "system", "content": CODING_SYSTEM_PROMPT},
+                {"role": "user", "content": user_input}
+            ],
+            temperature=0.2,
+        )
+        update_token_count(response.usage)
+        raw = response.choices[0].message.content.strip()
+        return extract_code(raw)
+    except Exception as e:
+        if "429" in str(e):
+            return "RATE_LIMIT"
+        print(f"[LLM] Error: {e}")
+        return ""
+
 def call_llm(user_input: str, model_size: str) -> dict:
     try:
         response = client.chat.completions.create(
@@ -59,6 +105,7 @@ def call_llm(user_input: str, model_size: str) -> dict:
             ],
             temperature=0.1,
         )
+        update_token_count(response.usage)
         raw = response.choices[0].message.content.strip()
         print(f"[DEBUG] Raw output:\n{raw}")
         return parse_json(raw)
@@ -82,6 +129,7 @@ def chat(user_input: str, model_size: str, history=None) -> str:
             messages=messages,
             temperature=0.7,
         )
+        update_token_count(response.usage)
         return response.choices[0].message.content.strip()
     except Exception as e:
         print(f"[LLM] Error: {e}")
